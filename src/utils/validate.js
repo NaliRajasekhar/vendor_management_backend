@@ -8,6 +8,13 @@ export function validateVendor(input) {
   if (!input.name) errors.name = 'Name is required'
   if (!input.email) errors.email = 'Email is required'
   else if (!emailRegex.test(String(input.email))) errors.email = 'Email is invalid'
+
+   if (typeof input.phone !== 'undefined' && input.phone !== null && String(input.phone).trim() !== '') {
+    if (!usPhoneRegex.test(String(input.phone).trim())) {
+      errors.phone = 'Phone must be a valid US number'
+    }
+  }
+  
   return errors
 }
 
