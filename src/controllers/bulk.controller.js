@@ -47,6 +47,24 @@ export async function uploadVendorClientsCsv(req, res, next) {
 
     let batch = [] // items: { row, vendor, client, ... }
     let rowCounter = 0
+    // const normLower = (v) => (v == null || String(v).trim() === '' ? '' : String(v).trim().toLowerCase())
+    const normLower = (v) => (v == null || String(v).trim() === '' ? '' : String(v).trim().toLowerCase())
+    // Convert CSV MSA string to boolean
+    const parseMsa = (val) => {
+      
+      if (val === undefined || val === null) return null
+      const s = String(val).trim().toLowerCase()
+      if (s === '') return null
+      // truthy forms (case-insensitive)
+      if (['true', 't', 'yes', 'y', '1', 'active', 'on', 'primary'].includes(s)) return true
+      // falsey forms (case-insensitive)
+      if (['false', 'f', 'no', 'n', '0', 'inactive', 'off'].includes(s)) return false
+      // unrecognized → null (don’t insert bad data)
+      return null
+    }
+
+    
+
 
     const flush = async () => {
       if (batch.length === 0) return
@@ -124,7 +142,8 @@ export async function uploadVendorClientsCsv(req, res, next) {
             email: email || null,
             phone: phone || null,
             client_city: r.city || null,
-            client_state: r.state || null
+            client_state: r.state || null,
+            msa: parseMsa(r.msa)
           })
         } catch (e) {
           failed++
@@ -132,14 +151,82 @@ export async function uploadVendorClientsCsv(req, res, next) {
         }
       }
 
+      // 1) Remove duplicates within the file by (vendor_id, client_name, implementation_partner_name, email)
+      const seen = new Set()
+      const candidates = []
+      for (const item of toInsert) {
+        const key = [
+          String(item.vendor_id || ''),
+          normLower(item.client_name),
+          normLower(item.implementation_partner_name),
+          normLower(item.email)
+        ].join('|')
+        if (seen.has(key)) {
+          duplicates += 1
+          rowDuplicates.push({ row: item.row, type: 'duplicate', reason: 'Duplicate in file (vendor+client+implementation+email)', data: item })
+        } else {
+          seen.add(key)
+          candidates.push(item)
+        }
+      }
+
+      // 2) Exclude rows already present in DB by same combination
+      let toInsertFinal = []
+      if (candidates.length) {
+        const tupleSql = []
+        const tupleParams = []
+        let j = 1
+        for (const c of candidates) {
+          // Cast placeholders to ensure correct types and avoid bigint=text comparison errors
+          tupleSql.push(`($${j++}::bigint,$${j++}::text,$${j++}::text,$${j++}::text)`)
+          tupleParams.push(
+            c.vendor_id,
+            normLower(c.client_name),
+            normLower(c.implementation_partner_name),
+            normLower(c.email)
+          )
+        }
+        const existing = await client.query(
+          `SELECT vendor_id,
+                  lower(client_name) AS client_name,
+                  lower(implementation_partner_name) AS implementation_partner_name,
+                  COALESCE(lower(email), '') AS email
+             FROM public.vendor_clients
+            WHERE (vendor_id, lower(client_name), lower(implementation_partner_name), COALESCE(lower(email), ''))
+                  IN (VALUES ${tupleSql.join(',')})`,
+          tupleParams
+        )
+        const existKeys = new Set(existing.rows.map(r => [
+          String(r.vendor_id || ''),
+          r.client_name || '',
+          r.implementation_partner_name || '',
+          r.email || ''
+        ].join('|')))
+        for (const c of candidates) {
+          const key = [
+            String(c.vendor_id || ''),
+            normLower(c.client_name),
+            normLower(c.implementation_partner_name),
+            normLower(c.email)
+          ].join('|')
+          if (existKeys.has(key)) {
+            duplicates += 1
+            rowDuplicates.push({ row: c.row, type: 'duplicate', reason: 'Duplicate (existing vendor+client+implementation+email)', data: c })
+          } else {
+            toInsertFinal.push(c)
+          }
+        }
+      }
+
       // Batch insert vendor_clients
-      if (toInsert.length) {
+      if (toInsertFinal.length) {
         // Build multi-row VALUES
         const values = []
         const params = []
         let i = 1
-        for (const item of toInsert) {
-          values.push(`($${i++},$${i++},$${i++},$${i++},$${i++},$${i++},$${i++},$${i++},$${i++})`)
+        for (const item of toInsertFinal) {
+          // 10 placeholders to match 10 columns including msa
+          values.push(`($${i++},$${i++},$${i++},$${i++},$${i++},$${i++},$${i++},$${i++},$${i++},$${i++})`)
           params.push(
             item.vendor_id,
             item.client_name,
@@ -149,22 +236,23 @@ export async function uploadVendorClientsCsv(req, res, next) {
             item.email,
             item.phone,
             item.client_city,
-            item.client_state
+            item.client_state,
+            item.msa
           )
         }
         const result = await client.query(
           `INSERT INTO public.vendor_clients (
              vendor_id, client_name, implementation_partner_name, contact_person_name,
-             department, email, phone, client_city, client_state
+             department, email, phone, client_city, client_state, msa
            ) VALUES ${values.join(',')}
            ON CONFLICT DO NOTHING
            RETURNING vendor_id, client_name, implementation_partner_name, contact_person_name,
-                     department, email, phone, client_city, client_state`,
+                     department, email, phone, client_city, client_state, msa`,
           params
         )
         const ok = Number(result?.rowCount || 0)
         inserted += ok
-        const skipped = toInsert.length - ok
+        const skipped = toInsertFinal.length - ok
         duplicates += skipped
 
         // Map inserted back to keys to determine which ones were skipped (duplicates)
@@ -177,10 +265,11 @@ export async function uploadVendorClientsCsv(req, res, next) {
           String(x.email || ''),
           String(x.phone || ''),
           String(x.client_city || ''),
-          String(x.client_state || '')
+          String(x.client_state || ''),
+          String(x.msa ?? '')
         ].join('|')
         const insertedKeys = new Set(result.rows.map(keyOf))
-        for (const item of toInsert) {
+        for (const item of toInsertFinal) {
           if (!insertedKeys.has(keyOf(item))) {
             rowDuplicates.push({ row: item.row, type: 'duplicate', reason: 'Duplicate row (existing record)', data: item })
           }
@@ -203,7 +292,8 @@ export async function uploadVendorClientsCsv(req, res, next) {
           email: row.email || row.Email || row.EMAIL || '',
           phone: row.phone || row.Phone || row.PHONE || '',
           city: row.city || row.City || row.CITY || '',
-          state: row.state || row.State || row.STATE || ''
+          state: row.state || row.State || row.STATE || '',
+          msa: row.msa || row.Msa || row.MSA
         })
         if (batch.length >= BATCH_SIZE) {
           stream.pause()
@@ -225,7 +315,7 @@ export async function uploadVendorClientsCsv(req, res, next) {
         const ts = Date.now()
         const fileName = `csv-upload-errors-${ts}.csv`
         const absPath = path.join(uploadsDir, fileName)
-        const header = 'type,row,vendor,client,implementation,name,department,email,phone,city,state,reason' + '\n'
+        const header = 'type,row,vendor,client,implementation,name,department,email,phone,city,state,msa,reason' + '\n'
         const lines = []
         const toCsvVal = (v) => {
           if (v == null) return ''
@@ -249,20 +339,21 @@ export async function uploadVendorClientsCsv(req, res, next) {
             d.phone || '',
             d.city || d.client_city || '',
             d.state || d.client_state || '',
+            (d.msa ?? ''),
             r.reason || ''
-          ].map(toCsvVal).join(',') )
+          ].map(toCsvVal).join(','))
         }
         for (const e of rowErrors) pushLine('error', e)
         for (const d of rowDuplicates) pushLine('duplicate', d)
         fs.writeFileSync(absPath, header + lines.join('\n'), 'utf8')
         errorReportUrl = `/uploads/${fileName}`
-      } catch {}
+      } catch { }
     }
 
     cleanup()
     res.json({ inserted, failed, duplicates, errors: rowErrors.length, duplicatesDetailed: rowDuplicates.length, errorReportUrl })
   } catch (err) {
-    try { await client.query('ROLLBACK') } catch {}
+    try { await client.query('ROLLBACK') } catch { }
     cleanup()
     next(err)
   } finally {
