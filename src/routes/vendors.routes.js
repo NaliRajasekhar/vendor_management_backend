@@ -1,16 +1,18 @@
 import { Router } from 'express'
 import multer from 'multer'
 import path from 'path'
-import { index, show, create, update, destroy, createWithFile, downloadMsv } from '../controllers/vendors.controller.js'
+import { index, show, create, update, destroy, createWithFile, downloadMsv, checkEmail } from '../controllers/vendors.controller.js'
 
 const router = Router()
 router.get('/', index)
+router.get('/check-email', checkEmail)
 router.get('/:id', show)
 router.get('/:id/msv', downloadMsv)
 router.post('/', create)
 router.put('/:id', update)
 router.patch('/:id', update)
 router.delete('/:id', destroy)
+
 // Upload storage for MSV files (pdf, doc only)
 const storage = multer.diskStorage({
   destination: (_req, _file, cb) => cb(null, path.resolve(process.cwd(), 'backend', 'uploads')),

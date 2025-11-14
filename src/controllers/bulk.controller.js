@@ -138,6 +138,7 @@ export async function uploadVendorClientsCsv(req, res, next) {
             client_name: r.client || null,
             implementation_partner_name: r.implementation || null,
             contact_person_name: r.name || null,
+            designation: r.designation || null,
             department: r.department || null,
             email: email || null,
             phone: phone || null,
@@ -170,13 +171,38 @@ export async function uploadVendorClientsCsv(req, res, next) {
         }
       }
 
+      // 1b) Exclude rows where email already exists in DB (duplicate email)
+      let candidatesAfterEmail = candidates
+      try {
+        const emails = [...new Set(candidates.map(c => normLower(c.email)).filter(e => e !== ''))]
+        if (emails.length) {
+          const ph = emails.map((_, idx) => `$${idx + 1}`).join(',')
+          const existingEmails = await client.query(
+            `SELECT DISTINCT lower(email) AS email FROM public.vendor_clients WHERE lower(email) IN (${ph})`,
+            emails
+          )
+          const existEmails = new Set(existingEmails.rows.map(r => r.email || ''))
+          const filtered = []
+          for (const c of candidates) {
+            const em = normLower(c.email)
+            if (em && existEmails.has(em)) {
+              duplicates += 1
+              rowDuplicates.push({ row: c.row, type: 'duplicate', reason: 'Duplicate email', data: c })
+            } else {
+              filtered.push(c)
+            }
+          }
+          candidatesAfterEmail = filtered
+        }
+      } catch {}
+
       // 2) Exclude rows already present in DB by same combination
       let toInsertFinal = []
-      if (candidates.length) {
+      if (candidatesAfterEmail.length) {
         const tupleSql = []
         const tupleParams = []
         let j = 1
-        for (const c of candidates) {
+        for (const c of candidatesAfterEmail) {
           // Cast placeholders to ensure correct types and avoid bigint=text comparison errors
           tupleSql.push(`($${j++}::bigint,$${j++}::text,$${j++}::text,$${j++}::text)`)
           tupleParams.push(
@@ -202,7 +228,7 @@ export async function uploadVendorClientsCsv(req, res, next) {
           r.implementation_partner_name || '',
           r.email || ''
         ].join('|')))
-        for (const c of candidates) {
+        for (const c of candidatesAfterEmail) {
           const key = [
             String(c.vendor_id || ''),
             normLower(c.client_name),
@@ -225,13 +251,14 @@ export async function uploadVendorClientsCsv(req, res, next) {
         const params = []
         let i = 1
         for (const item of toInsertFinal) {
-          // 10 placeholders to match 10 columns including msa
-          values.push(`($${i++},$${i++},$${i++},$${i++},$${i++},$${i++},$${i++},$${i++},$${i++},$${i++})`)
+          // 11 placeholders to match 11 columns including designation and msa
+          values.push(`($${i++},$${i++},$${i++},$${i++},$${i++},$${i++},$${i++},$${i++},$${i++},$${i++},$${i++})`)
           params.push(
             item.vendor_id,
             item.client_name,
             item.implementation_partner_name,
             item.contact_person_name,
+            item.designation,
             item.department,
             item.email,
             item.phone,
@@ -243,11 +270,11 @@ export async function uploadVendorClientsCsv(req, res, next) {
         const result = await client.query(
           `INSERT INTO public.vendor_clients (
              vendor_id, client_name, implementation_partner_name, contact_person_name,
-             department, email, phone, client_city, client_state, msa
+             designation, department, email, phone, client_city, client_state, msa
            ) VALUES ${values.join(',')}
            ON CONFLICT DO NOTHING
            RETURNING vendor_id, client_name, implementation_partner_name, contact_person_name,
-                     department, email, phone, client_city, client_state, msa`,
+                     designation, department, email, phone, client_city, client_state, msa`,
           params
         )
         const ok = Number(result?.rowCount || 0)
@@ -261,6 +288,7 @@ export async function uploadVendorClientsCsv(req, res, next) {
           String(x.client_name || ''),
           String(x.implementation_partner_name || ''),
           String(x.contact_person_name || ''),
+          String(x.designation || ''),
           String(x.department || ''),
           String(x.email || ''),
           String(x.phone || ''),
@@ -288,6 +316,7 @@ export async function uploadVendorClientsCsv(req, res, next) {
           client: row.client || row.Client || row.CLIENT || '',
           implementation: row.implementation || row.Implementation || row.IMPLEMENTATION || '',
           name: row.name || row.Name || row.NAME || '',
+          designation: row.designation || row.Designation || row.DESIGNATION || '',
           department: row.department || row.Department || row.DEPARTMENT || '',
           email: row.email || row.Email || row.EMAIL || '',
           phone: row.phone || row.Phone || row.PHONE || '',
@@ -315,7 +344,7 @@ export async function uploadVendorClientsCsv(req, res, next) {
         const ts = Date.now()
         const fileName = `csv-upload-errors-${ts}.csv`
         const absPath = path.join(uploadsDir, fileName)
-        const header = 'type,row,vendor,client,implementation,name,department,email,phone,city,state,msa,reason' + '\n'
+        const header = 'type,row,vendor,client,implementation,name,designation,department,email,phone,city,state,msa,reason' + '\n'
         const lines = []
         const toCsvVal = (v) => {
           if (v == null) return ''
@@ -334,6 +363,7 @@ export async function uploadVendorClientsCsv(req, res, next) {
             d.client || d.client_name || '',
             d.implementation || d.implementation_partner_name || '',
             d.name || d.contact_person_name || '',
+            d.designation || '',
             d.department || '',
             d.email || '',
             d.phone || '',

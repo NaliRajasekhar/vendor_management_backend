@@ -1,7 +1,6 @@
 import { query } from '../config/db.js'
 
 export async function summary(_req, res, next) {
-  console.log("summary");
   
   try {
     // vendor_count from public.vendors
@@ -14,7 +13,6 @@ export async function summary(_req, res, next) {
         (SELECT COUNT(*) FROM public.vendor_clients WHERE msa = true) AS msa_count
     `
     const { rows } = await query(sql)
-    console.log("rows 15", rows);
     const row = rows[0] || { vendor_count: 0, client_count: 0, msa_count: 0 }
     res.json({
       vendors: Number(row.vendor_count) || 0,

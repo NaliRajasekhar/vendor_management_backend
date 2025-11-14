@@ -1,13 +1,28 @@
 import { query } from '../config/db.js'
 
+
+const parseMsa = (val) => {
+      
+      if (val === undefined || val === null) return null
+      const s = String(val).trim().toLowerCase()
+      if (s === '') return null
+      // truthy forms (case-insensitive)
+      if (['true', 't', 'yes', 'y', '1', 'active', 'on', 'primary'].includes(s)) return true
+      // falsey forms (case-insensitive)
+      if (['false', 'f', 'no', 'n', '0', 'inactive', 'off'].includes(s)) return false
+      // unrecognized → null (don’t insert bad data)
+      return null
+    }
 // Map DB rows (join of vendor_clients + vendors) to API shape expected by frontend
 const toApi = (row) => ({
+
   id: row.client_id, // vendor_clients.id
   vendor: row.vendor_name,
   implementation: row.implementation_partner_name,
   client: row.client_name,
   isPrimary: row.msa,
   name: row.contact_person_name,
+  designation: row.designation || null,
   phone: row.phone,
   email: row.email,
   department: row.department,
@@ -61,6 +76,7 @@ export async function listVendors() {
        vc.client_name,
        vc.implementation_partner_name,
        vc.contact_person_name,
+       vc.designation,
        vc.department,
        vc.email,
        vc.phone,
@@ -72,8 +88,9 @@ export async function listVendors() {
      FROM public.vendor_clients vc
      JOIN public.vendors v ON v.vendor_id = vc.vendor_id 
       where vc.msa = TRUE
-     ORDER BY vc.created_at DESC`
+     ORDER BY vc.updated_at DESC`
   )
+  
   return rows.map(toApi)
 }
 
@@ -87,6 +104,7 @@ export async function getVendor(id) {
        vc.client_name,
        vc.implementation_partner_name,
        vc.contact_person_name,
+       vc.designation,
        vc.department,
        vc.email,
        vc.phone,
@@ -101,6 +119,7 @@ export async function getVendor(id) {
      LIMIT 1`,
     [id]
   )
+
   return rows[0] ? toApi(rows[0]) : null
 }
 
@@ -120,6 +139,7 @@ export async function createVendor(_unusedId, data) {
     data.implementation || null,
     data.isPrimary || null,
     data.name || null,
+    data.designation || null,
     data.department || null,
     data.email || null,
     data.phone || null,
@@ -130,9 +150,9 @@ export async function createVendor(_unusedId, data) {
   ]
   const { rows } = await query(
     `INSERT INTO public.vendor_clients (
-       vendor_id, client_name, implementation_partner_name,msa, contact_person_name, department,
-       email, phone, client_city, client_state, msa_signed_date, notes
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+      vendor_id, client_name, implementation_partner_name,msa, contact_person_name, designation, department,
+      email, phone, client_city, client_state, msa_signed_date, notes
+    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
      RETURNING 
        id as client_id,
        (SELECT vendor_name FROM public.vendors WHERE vendor_id = $1) as vendor_name,
@@ -140,6 +160,7 @@ export async function createVendor(_unusedId, data) {
        implementation_partner_name,
        msa,
        contact_person_name,
+       designation,
        department,
        email,
        phone,
@@ -176,6 +197,7 @@ export async function updateVendor(id, data) {
     ['implementation_partner_name', data.implementation],
     ['msa', data.isPrimary],
     ['contact_person_name', data.name],
+    ['designation', data.designation],
     ['department', data.department],
     ['email', data.email],
     ['phone', data.phone],
