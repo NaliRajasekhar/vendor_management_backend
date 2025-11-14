@@ -51,11 +51,32 @@ export async function destroy(req, res, next) {
   } catch (err) { next(err) }
 }
 
+// Check email uniqueness across vendor client emails
+export async function checkEmail(req, res, next) {
+  try {
+    const { email = '', excludeId } = req.query || {}
+    const emailStr = String(email).trim()
+    const emailRegex = /\S+@\S+\.[A-Za-z]{2,}/
+    if (!emailStr || !emailRegex.test(emailStr)) {
+      return res.json({ unique: false })
+    }
+    const exclude = excludeId ? Number(excludeId) : null
+    const { rows } = await query(
+      `SELECT COUNT(*)::int AS cnt
+         FROM public.vendor_clients
+        WHERE lower(email) = lower($1)
+          AND ($2::bigint IS NULL OR id <> $2)`,
+      [emailStr, exclude]
+    )
+    const cnt = Number(rows?.[0]?.cnt || 0)
+    return res.json({ unique: cnt === 0 })
+  } catch (err) { next(err) }
+}
+
 // Create with file upload (multipart/form-data)
 export async function createWithFile(req, res, next) {
   try {
     const payload = req.body || {}
-    console.log("req.body 37", payload);  
     // Normalize booleans
     if (typeof payload.isPrimary === 'string') payload.isPrimary = payload.isPrimary === 'true' || payload.isPrimary === '1'
 
@@ -69,7 +90,6 @@ export async function createWithFile(req, res, next) {
 
     const id = randomUUID()
     const file = req.file
-    console.log("file 51", req.file); 
     let msvFileUrl = null
     if (file) {
       // Expose via /uploads route set in app.js

@@ -2,7 +2,6 @@ import { query } from '../config/db.js'
 
 export async function searchVendors(req, res, next) {
 
-  console.log("req.query", req.query);
   try {
     const q = String(req.query.q || '').trim().toLowerCase()
     const limit = Math.min(Math.max(parseInt(req.query.limit || '50', 10), 1), 500)
@@ -52,19 +51,20 @@ export async function searchClients(req, res, next) {
       const like = `%${q}%`
       const cnt = await query(
         `SELECT COUNT(*) AS total FROM public.vendor_clients vc
-         WHERE vc.client_name_norm LIKE $1 OR vc.email_norm LIKE $1 OR vc.implementation_partner_norm LIKE $1`,
+         WHERE vc.client_name_norm LIKE $1 OR vc.email_norm LIKE $1 OR vc.implementation_partner_norm LIKE $1 OR lower(vc.designation) LIKE $1`,
         [like]
       )
       total = Number(cnt.rows[0]?.total || 0)
       const result = await query(
         `SELECT vc.id, v.vendor_id, v.vendor_name, vc.client_name, vc.implementation_partner_name,vc.msa,
-                vc.contact_person_name, vc.department, vc.email, vc.phone, vc.client_city, vc.client_state,
+                vc.contact_person_name, vc.designation, vc.department, vc.email, vc.phone, vc.client_city, vc.client_state,
                 vc.created_at, vc.updated_at
          FROM public.vendor_clients vc
          JOIN public.vendors v ON v.vendor_id = vc.vendor_id
          WHERE vc.client_name_norm LIKE $1
          OR vc.email_norm LIKE $1
          OR vc.implementation_partner_norm LIKE $1
+         OR lower(vc.designation) LIKE $1
          ORDER BY vc.created_at DESC
          LIMIT $2 OFFSET $3`,
         [like, limit, offset]
@@ -75,7 +75,7 @@ export async function searchClients(req, res, next) {
       total = Number(cnt.rows[0]?.total || 0)
       const result = await query(
         `SELECT vc.id, v.vendor_id, v.vendor_name, vc.client_name, vc.implementation_partner_name,vc.msa,
-                vc.contact_person_name, vc.department, vc.email, vc.phone, vc.client_city, vc.client_state,
+                vc.contact_person_name, vc.designation, vc.department, vc.email, vc.phone, vc.client_city, vc.client_state,
                 vc.created_at, vc.updated_at
          FROM public.vendor_clients vc
          JOIN public.vendors v ON v.vendor_id = vc.vendor_id
@@ -144,18 +144,20 @@ export async function vendorClientsByVendor(req, res, next) {
       const like = `%${q}%`
       const cnt = await query(
         `SELECT COUNT(*) AS total FROM public.vendor_clients vc
-         WHERE vc.vendor_id = $1 AND (lower(vc.client_name) LIKE $2 OR lower(vc.department) LIKE $2 OR lower(vc.contact_person_name) LIKE $2 OR lower(vc.email) LIKE $2)`,
+         WHERE vc.vendor_id = $1 AND (
+           lower(vc.client_name) LIKE $2 OR lower(vc.department) LIKE $2 OR lower(vc.contact_person_name) LIKE $2 OR lower(vc.email) LIKE $2 OR lower(vc.designation) LIKE $2
+         )`,
         [vendorId, like]
       )
       total = Number(cnt.rows[0]?.total || 0)
       const result = await query(
         `SELECT vc.id, v.vendor_name, vc.client_name, vc.implementation_partner_name,
-                vc.contact_person_name, vc.department, vc.email, vc.phone, vc.client_city, vc.client_state,
+                vc.contact_person_name, vc.designation, vc.department, vc.email, vc.phone, vc.client_city, vc.client_state,
                 vc.created_at, vc.updated_at
          FROM public.vendor_clients vc
          JOIN public.vendors v ON v.vendor_id = vc.vendor_id
          WHERE vc.vendor_id = $1 AND (
-              lower(vc.client_name) LIKE $2 OR lower(vc.department) LIKE $2 OR lower(vc.contact_person_name) LIKE $2 OR lower(vc.email) LIKE $2
+              lower(vc.client_name) LIKE $2 OR lower(vc.department) LIKE $2 OR lower(vc.contact_person_name) LIKE $2 OR lower(vc.email) LIKE $2 OR lower(vc.designation) LIKE $2
          )
          ORDER BY vc.created_at DESC
          LIMIT $3 OFFSET $4`,
@@ -167,7 +169,7 @@ export async function vendorClientsByVendor(req, res, next) {
       total = Number(cnt.rows[0]?.total || 0)
       const result = await query(
         `SELECT vc.id, v.vendor_id, v.vendor_name, vc.client_name, vc.implementation_partner_name,
-                vc.contact_person_name, vc.department, vc.email, vc.phone, vc.client_city, vc.client_state,
+                vc.contact_person_name, vc.designation, vc.department, vc.email, vc.phone, vc.client_city, vc.client_state,
                 vc.created_at, vc.updated_at
          FROM public.vendor_clients vc
          JOIN public.vendors v ON v.vendor_id = vc.vendor_id
@@ -200,19 +202,19 @@ export async function vendorClientsByClient(req, res, next) {
       const cnt = await query(
         `SELECT COUNT(*) AS total FROM public.vendor_clients vc
          WHERE lower(vc.client_name) = lower($1) AND (
-           lower(vc.implementation_partner_name) LIKE $2 OR lower(vc.contact_person_name) LIKE $2 OR lower(vc.department) LIKE $2 OR lower(vc.email) LIKE $2
+           lower(vc.implementation_partner_name) LIKE $2 OR lower(vc.contact_person_name) LIKE $2 OR lower(vc.department) LIKE $2 OR lower(vc.email) LIKE $2 OR lower(vc.designation) LIKE $2
          )`,
         [clientName, like]
       )
       total = Number(cnt.rows[0]?.total || 0)
       const result = await query(
         `SELECT vc.id, v.vendor_id, v.vendor_name, vc.client_name, vc.implementation_partner_name,
-                vc.contact_person_name, vc.department, vc.email, vc.phone, vc.client_city, vc.client_state,
+                vc.contact_person_name, vc.designation, vc.department, vc.email, vc.phone, vc.client_city, vc.client_state,
                 vc.created_at, vc.updated_at
          FROM public.vendor_clients vc
          JOIN public.vendors v ON v.vendor_id = vc.vendor_id
          WHERE lower(vc.client_name) = lower($1) AND (
-              lower(vc.implementation_partner_name) LIKE $2 OR lower(vc.contact_person_name) LIKE $2 OR lower(vc.department) LIKE $2 OR lower(vc.email) LIKE $2
+              lower(vc.implementation_partner_name) LIKE $2 OR lower(vc.contact_person_name) LIKE $2 OR lower(vc.department) LIKE $2 OR lower(vc.email) LIKE $2 OR lower(vc.designation) LIKE $2
          )
          ORDER BY vc.created_at DESC
          LIMIT $3 OFFSET $4`,
@@ -247,17 +249,27 @@ export async function globalVendorClientSearch(req, res, next) {
     const limit = Math.min(Math.max(parseInt(req.query.limit || '50', 10), 1), 500)
     const offset = Math.max(parseInt(req.query.offset || '0', 10), 0)
 
+    // Map textual query to MSA boolean when applicable
+    const parseMsaQuery = (s) => {
+      if (!s) return null
+      const t = String(s).trim().toLowerCase()
+      if (t === 'active') return true
+      if (t === 'inactive') return false
+      return null
+    }
+    const msaQuery = parseMsaQuery(q)
+
     if (!q) {
       // If empty query, behave like latest vendor_clients
       const cnt = await query(`SELECT COUNT(*) AS total FROM public.vendor_clients`)
       const total = Number(cnt.rows[0]?.total || 0)
       const result = await query(
         `SELECT vc.id, v.vendor_id, v.vendor_name, vc.client_name, vc.implementation_partner_name,vc.msa,
-                vc.contact_person_name, vc.department, vc.email, vc.phone, vc.client_city, vc.client_state,
+                vc.contact_person_name, vc.designation, vc.department, vc.email, vc.phone, vc.client_city, vc.client_state,
                 vc.created_at, vc.updated_at
          FROM public.vendor_clients vc
          JOIN public.vendors v ON v.vendor_id = vc.vendor_id
-         ORDER BY vc.created_at DESC
+         ORDER BY vc.updated_at DESC
          LIMIT $1 OFFSET $2`,
         [limit, offset]
       )
@@ -265,23 +277,29 @@ export async function globalVendorClientSearch(req, res, next) {
     }
 
     const like = `%${q}%`
-    const cnt = await query(
-      `SELECT COUNT(*) AS total FROM public.vendor_clients vc
+    // Build COUNT with optional MSA filter
+    let cntSql = `SELECT COUNT(*) AS total FROM public.vendor_clients vc
        JOIN public.vendors v ON v.vendor_id = vc.vendor_id
        WHERE lower(v.vendor_name) LIKE $1
           OR lower(vc.client_name) LIKE $1
           OR lower(vc.email) LIKE $1
           OR lower(vc.phone) LIKE $1
           OR lower(vc.client_state) LIKE $1
+            OR lower(vc.client_city) LIKE $1
           OR lower(v.vendor_state) LIKE $1
           OR lower(vc.implementation_partner_name) LIKE $1
-          OR lower(vc.contact_person_name) LIKE $1`,
-      [like]
-    )
+          OR lower(vc.contact_person_name) LIKE $1
+          OR lower(vc.designation) LIKE $1`
+    const cntParams = [like]
+    if (msaQuery !== null) {
+      cntSql += ` OR vc.msa = $2`
+      cntParams.push(msaQuery)
+    }
+    const cnt = await query(cntSql, cntParams)
     const total = Number(cnt.rows[0]?.total || 0)
-    const result = await query(
-      `SELECT vc.id, v.vendor_id, v.vendor_name, vc.client_name, vc.implementation_partner_name,vc.msa,
-              vc.contact_person_name, vc.department, vc.email, vc.phone, vc.client_city, vc.client_state,
+    // Build SELECT with optional MSA filter and adjusted parameter positions
+    let selSql = `SELECT vc.id, v.vendor_id, v.vendor_name, vc.client_name, vc.implementation_partner_name,vc.msa,
+              vc.contact_person_name, vc.designation, vc.department, vc.email, vc.phone, vc.client_city, vc.client_state,
               vc.created_at, vc.updated_at
        FROM public.vendor_clients vc
        JOIN public.vendors v ON v.vendor_id = vc.vendor_id
@@ -290,13 +308,21 @@ export async function globalVendorClientSearch(req, res, next) {
            OR lower(vc.email) LIKE $1
            OR lower(vc.phone) LIKE $1
            OR lower(vc.client_state) LIKE $1
+            OR lower(vc.client_city) LIKE $1
            OR lower(v.vendor_state) LIKE $1
            OR lower(vc.implementation_partner_name) LIKE $1
            OR lower(vc.contact_person_name) LIKE $1
-       ORDER BY vc.created_at DESC
-       LIMIT $2 OFFSET $3`,
-      [like, limit, offset]
-    )
-    res.json({ items: result.rows, limit, offset, total })
+           OR lower(vc.designation) LIKE $1`
+    const selParams = [like]
+    if (msaQuery !== null) {
+      selSql += ` OR vc.msa = $2`
+      selSql += ` ORDER BY vc.updated_at DESC LIMIT $3 OFFSET $4`
+      selParams.push(msaQuery, limit, offset)
+    } else {
+      selSql += ` ORDER BY vc.updated_at DESC LIMIT $2 OFFSET $3`
+      selParams.push(limit, offset)
+    }
+    const result = await query(selSql, selParams)
+    res.json({ items: result.rows, limit, offset, total })  
   } catch (err) { next(err) }
 }

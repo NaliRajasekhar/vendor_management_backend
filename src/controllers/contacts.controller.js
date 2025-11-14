@@ -34,7 +34,6 @@ export async function create(req, res, next) {
 export async function createWithFile(req, res, next) {
   try {
     const payload = req.body || {}
-    console.log("req.body 37", payload);  
     // Normalize booleans
     if (typeof payload.isPrimary === 'string') payload.isPrimary = payload.isPrimary === 'true' || payload.isPrimary === '1'
 
@@ -48,7 +47,6 @@ export async function createWithFile(req, res, next) {
 
     const id = randomUUID()
     const file = req.file
-    console.log("file 51", req.file); 
     let msvFileUrl = null
     if (file) {
       // Expose via /uploads route set in app.js
