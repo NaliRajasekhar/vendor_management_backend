@@ -110,6 +110,35 @@ export async function createWithFile(req, res, next) {
   } catch (err) { next(err) }
 }
 
+// Update vendor-client with optional MSV file upload
+export async function updateWithFile(req, res, next) {
+  try {
+    const payload = req.body || {}
+    if (typeof payload.isPrimary === 'string') payload.isPrimary = payload.isPrimary === 'true' || payload.isPrimary === '1'
+    const file = req.file
+    let msvFileUrl = null
+    if (file) {
+      msvFileUrl = `/uploads/${file.filename}`
+    }
+
+    const item = await updateVendor(req.params.id, { ...payload, msvFileUrl })
+    if (!item) return res.status(404).json({ message: 'Vendor not found' })
+
+    // Also persist on public.vendors for this vendor name if provided
+    if (payload.vendor && msvFileUrl) {
+      try {
+        await query(
+          `UPDATE public.vendors SET msv_file_url = $2, updated_at = NOW()
+           WHERE vendor_name_norm = lower($1)`,
+          [payload.vendor, msvFileUrl]
+        )
+      } catch {}
+    }
+
+    res.json(item)
+  } catch (err) { next(err) }
+}
+
 // Download MSV file for a given vendor-client id
 export async function downloadMsv(req, res, next) {
   try {
@@ -126,12 +155,19 @@ export async function downloadMsv(req, res, next) {
     if (!url) return res.status(404).json({ message: 'MSV file not found' })
 
     if (url.startsWith('/uploads/')) {
-      const rel = url.replace(/^\/+/, '') // strip leading slashes
-      const abs = path.resolve(process.cwd(), 'backend', rel)
+      const uploadsDir = path.resolve(process.cwd(), 'backend', 'uploads')
+      const filename = path.basename(url) // guard against traversal
+      const abs = path.join(uploadsDir, filename)
+      if (!abs.startsWith(uploadsDir)) {
+        return res.status(400).json({ message: 'Invalid file path' })
+      }
       if (!fs.existsSync(abs)) return res.status(404).json({ message: 'MSV file missing on server' })
-      // Set a sensible filename from URL
-      const filename = path.basename(abs)
-      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`)
+      const ext = path.extname(filename).toLowerCase()
+      const contentType = ext === '.pdf' ? 'application/pdf'
+        : ext === '.doc' ? 'application/msword'
+        : 'application/octet-stream'
+      res.setHeader('Content-Type', contentType)
+      res.setHeader('Content-Disposition', `attachment; filename=\"${filename}\"`)
       return res.sendFile(abs)
     }
     // Fallback for absolute/external URLs: redirect to the file
