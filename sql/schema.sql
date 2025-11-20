@@ -49,3 +49,29 @@ CREATE TRIGGER vendors_set_updated_at BEFORE UPDATE ON vendors FOR EACH ROW EXEC
 
 DROP TRIGGER IF EXISTS contacts_set_updated_at ON contacts;
 CREATE TRIGGER contacts_set_updated_at BEFORE UPDATE ON contacts FOR EACH ROW EXECUTE PROCEDURE set_updated_at();
+
+CREATE TABLE IF NOT EXISTS user_roles (
+  id BIGSERIAL PRIMARY KEY,
+  role_name TEXT NOT NULL UNIQUE
+);
+
+INSERT INTO user_roles(role_name)
+VALUES ('admin'), ('employee'), ('user')
+ON CONFLICT (role_name) DO NOTHING;
+
+CREATE TABLE IF NOT EXISTS users (
+  id BIGSERIAL PRIMARY KEY,
+  email TEXT NOT NULL UNIQUE,
+  password_hash TEXT NOT NULL,
+  first_name TEXT NULL,
+  last_name TEXT NULL,
+  role_id BIGINT NOT NULL REFERENCES user_roles(id),
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_lower ON users (LOWER(email));
+
+DROP TRIGGER IF EXISTS users_set_updated_at ON users;
+CREATE TRIGGER users_set_updated_at BEFORE UPDATE ON users FOR EACH ROW EXECUTE PROCEDURE set_updated_at();

@@ -1,22 +1,21 @@
 import { query } from '../config/db.js'
 
-
 const parseMsa = (val) => {
-      
-      if (val === undefined || val === null) return null
-      const s = String(val).trim().toLowerCase()
-      if (s === '') return null
-      // truthy forms (case-insensitive)
-      if (['true', 't', 'yes', 'y', '1', 'active', 'on', 'primary'].includes(s)) return true
-      // falsey forms (case-insensitive)
-      if (['false', 'f', 'no', 'n', '0', 'inactive', 'off'].includes(s)) return false
-      // unrecognized → null (don’t insert bad data)
-      return null
-    }
-// Map DB rows (join of vendor_clients + vendors) to API shape expected by frontend
-const toApi = (row) => ({
+  if (val === undefined || val === null) return null
+  const s = String(val).trim().toLowerCase()
+  if (s === '') return null
+  if (['true', 't', 'yes', 'y', '1', 'active', 'on', 'primary'].includes(s)) return true
+  if (['false', 'f', 'no', 'n', '0', 'inactive', 'off'].includes(s)) return false
+  return null
+}
 
-  id: row.client_id, // vendor_clients.id
+const normalizeMsa = (val) => {
+  const parsed = parseMsa(val)
+  return parsed === null ? false : parsed
+}
+
+const toApi = (row) => ({
+  id: row.client_id,
   vendor: row.vendor_name,
   implementation: row.implementation_partner_name,
   client: row.client_name,
@@ -45,7 +44,6 @@ async function findVendorIdByName(vendorName) {
 }
 
 async function createVendorIfNotExists(vendorName, vendorCity = null, vendorState = null, msvFileUrl = null) {
-  // Try find existing vendor by normalized name
   const existingId = await findVendorIdByName(vendorName)
   if (existingId) {
     if (msvFileUrl) {
@@ -56,7 +54,6 @@ async function createVendorIfNotExists(vendorName, vendorCity = null, vendorStat
     }
     return existingId
   }
-  // Create vendor; assumes vendor_id is identity or default-generated in DB
   const { rows } = await query(
     `INSERT INTO public.vendors (vendor_name, vendor_city, vendor_state, msv_file_url)
      VALUES ($1, $2, $3, $4)
@@ -87,10 +84,10 @@ export async function listVendors() {
        vc.updated_at as client_updated_at
      FROM public.vendor_clients vc
      JOIN public.vendors v ON v.vendor_id = vc.vendor_id 
-      where vc.msa = TRUE
+     WHERE vc.msa = TRUE
      ORDER BY vc.updated_at DESC`
   )
-  
+
   return rows.map(toApi)
 }
 
@@ -124,7 +121,6 @@ export async function getVendor(id) {
 }
 
 export async function createVendor(_unusedId, data) {
-  // Ensure vendor exists or create it
   const vendorId = await createVendorIfNotExists(
     data.vendor || null,
     null,
@@ -132,12 +128,11 @@ export async function createVendor(_unusedId, data) {
     data.msvFileUrl || null
   )
 
-  // Insert vendor client row; assumes id is identity/default
   const params = [
     vendorId,
     data.client || null,
     data.implementation || null,
-    data.isPrimary || null,
+    normalizeMsa(data.isPrimary),
     data.name || null,
     data.designation || null,
     data.department || null,
@@ -146,11 +141,11 @@ export async function createVendor(_unusedId, data) {
     data.city || null,
     data.state || null,
     data.msaSignedDate || null,
-    null // notes
+    null
   ]
   const { rows } = await query(
     `INSERT INTO public.vendor_clients (
-      vendor_id, client_name, implementation_partner_name,msa, contact_person_name, designation, department,
+      vendor_id, client_name, implementation_partner_name, msa, contact_person_name, designation, department,
       email, phone, client_city, client_state, msa_signed_date, notes
     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
      RETURNING 
@@ -175,9 +170,7 @@ export async function createVendor(_unusedId, data) {
 }
 
 export async function updateVendor(id, data) {
-  // Optionally update vendor name if provided
   if (typeof data.vendor !== 'undefined' && data.vendor) {
-    // Find vendor_id for this client row
     const { rows: clientRows } = await query(`SELECT vendor_id FROM public.vendor_clients WHERE id = $1`, [id])
     const currentVendorId = clientRows[0]?.vendor_id || null
     if (currentVendorId) {
@@ -195,7 +188,6 @@ export async function updateVendor(id, data) {
   const fields = [
     ['client_name', data.client],
     ['implementation_partner_name', data.implementation],
-    ['msa', data.isPrimary],
     ['contact_person_name', data.name],
     ['designation', data.designation],
     ['department', data.department],
@@ -208,12 +200,19 @@ export async function updateVendor(id, data) {
   const sets = []
   const values = []
   let idx = 1
+
+  if (Object.prototype.hasOwnProperty.call(data, 'isPrimary')) {
+    sets.push(`msa = $${idx++}`)
+    values.push(normalizeMsa(data.isPrimary))
+  }
+
   for (const [col, val] of fields) {
     if (typeof val !== 'undefined') {
       sets.push(`${col} = $${idx++}`)
       values.push(val)
     }
   }
+
   if (!sets.length) return await getVendor(id)
   values.push(id)
   await query(
@@ -227,3 +226,4 @@ export async function deleteVendor(id) {
   const { rowCount } = await query(`DELETE FROM public.vendor_clients WHERE id = $1`, [id])
   return rowCount > 0
 }
+

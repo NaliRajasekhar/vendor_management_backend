@@ -132,6 +132,7 @@ export async function uploadVendorClientsCsv(req, res, next) {
             continue
           }
 
+          const parsedMsa = parseMsa(r.msa)
           toInsert.push({
             row: r.row,
             vendor_id: vendorId,
@@ -144,7 +145,7 @@ export async function uploadVendorClientsCsv(req, res, next) {
             phone: phone || null,
             client_city: r.city || null,
             client_state: r.state || null,
-            msa: parseMsa(r.msa)
+            msa: parsedMsa === null ? false : parsedMsa
           })
         } catch (e) {
           failed++

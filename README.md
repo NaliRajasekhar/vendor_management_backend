@@ -16,7 +16,8 @@ The API listens on `http://localhost:4000` by default.
 - `PORT` (default `4000`)
 - `CORS_ORIGIN` (default `http://localhost:5173`)
 - `PGHOST`, `PGPORT`, `PGUSER`, `PGPASSWORD`, `PGDATABASE`
-- `DUMMY_PASSWORD` dummy password required for login (default: `password`)
+- `JWT_SECRET` secret for signing auth tokens (default `change-me`)
+- `JWT_EXPIRES_IN` token lifetime (default `1d`)
 
 ## Endpoints
 
@@ -30,11 +31,22 @@ The API listens on `http://localhost:4000` by default.
   - `DELETE /api/vendors/:id` — soft delete vendor
 
 - Contacts
-  - `GET /api/contacts` — list contacts
-  - `GET /api/contacts/:id` — get contact by id
-  - `POST /api/contacts` — create contact
-  - `PUT /api/contacts/:id` — update contact
-  - `DELETE /api/contacts/:id` — delete contact
+  - `GET /api/contacts` – list contacts
+  - `GET /api/contacts/:id` – get contact by id
+  - `POST /api/contacts` – create contact
+  - `PUT /api/contacts/:id` – update contact
+  - `DELETE /api/contacts/:id` – delete contact
+
+## Users & Roles
+
+- `users` and `user_roles` tables are created automatically by the backend startup migration.
+- Default roles seeded into the database: `admin`, `employee`, and `user`.
+- Extend the data in `user_roles` if you need additional roles; `users.role_id` references `user_roles.id`.
+- Dummy users are inserted at startup so you can sign in right away:
+  - `admin@logisoft.com` / `Admin@123`
+  - `employee@logisoft.com` / `Employee@123`
+  - `user@logisoft.com` / `User@123`
+- Update or remove the dummy users after provisioning by editing `src/migrations/seed_users.js`.
 
 ## Integrating with the React App
 

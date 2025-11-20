@@ -1,7 +1,9 @@
 import { Router } from 'express'
 import { searchVendors, searchClients, listVendorOptions, vendorClientsByVendor, listClientOptions, vendorClientsByClient, globalVendorClientSearch } from '../controllers/search.controller.js'
+import { authorizeRoles } from '../middleware/auth.js'
 
 const router = Router()
+router.use(authorizeRoles(['admin', 'employee', 'user']))
 router.get('/vendors', searchVendors)
 router.get('/clients', searchClients)
 router.get('/vendor-options', listVendorOptions)
