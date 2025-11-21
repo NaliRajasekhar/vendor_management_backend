@@ -2,11 +2,15 @@ import { Router } from 'express'
 import multer from 'multer'
 import path from 'path'
 import { index, show, create, update, destroy, createWithFile } from '../controllers/contacts.controller.js'
+import { authorizeRoles } from '../middleware/auth.js'
+
+const readerRoles = ['admin', 'employee', 'user']
+const editorRoles = ['admin', 'employee']
 
 const router = Router()
-router.get('/', index)
-router.get('/:id', show)
-router.post('/', create)
+router.get('/', authorizeRoles(readerRoles), index)
+router.get('/:id', authorizeRoles(readerRoles), show)
+router.post('/', authorizeRoles(editorRoles), create)
 // Upload storage for MSV files (pdf, doc only)
 const storage = multer.diskStorage({
   destination: (_req, _file, cb) => cb(null, path.resolve(process.cwd(), 'backend', 'uploads')),
@@ -23,9 +27,9 @@ function fileFilter(_req, file, cb) {
   cb(null, true)
 }
 const upload = multer({ storage, fileFilter, limits: { fileSize: 10 * 1024 * 1024 } })
-router.post('/with-file', upload.single('msv'), createWithFile)
-router.put('/:id', update)
-router.patch('/:id', update)
-router.delete('/:id', destroy)
+router.post('/with-file', authorizeRoles(editorRoles), upload.single('msv'), createWithFile)
+router.put('/:id', authorizeRoles(editorRoles), update)
+router.patch('/:id', authorizeRoles(editorRoles), update)
+router.delete('/:id', authorizeRoles(editorRoles), destroy)
 
 export default router

@@ -10,6 +10,7 @@ import authRouter from './routes/auth.routes.js'
 import bulkRouter from './routes/bulk.routes.js'
 import dashboardRouter from './routes/dashboard.routes.js'
 import { errorHandler, notFound } from './middleware/errorHandler.js'
+import { authenticate } from './middleware/auth.js'
 
 const app = express()
 
@@ -24,9 +25,13 @@ app.use('/uploads', express.static(uploadsDir))
 
 app.get('/healthz', (_req, res) => res.json({ ok: true }))
 
+app.use('/api/auth', authRouter)
+
+// Everything below requires a valid JWT
+app.use(authenticate)
+
 app.use('/api/vendors', vendorsRouter)
 app.use('/api/contacts', contactsRouter)
-app.use('/api/auth', authRouter)
 app.use('/api/search', searchRouter)
 app.use('/api/bulk', bulkRouter)
 app.use('/api/dashboard', dashboardRouter)
